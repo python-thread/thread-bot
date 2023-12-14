@@ -16,7 +16,7 @@ async def on_ready():
   print(f'Client [{client.user}] UP')
 
 @client.event
-async def on_message(message: str):
+async def on_message(message):
   # Allow text to invoke comamnds
   await client.process_commands(message)
 
@@ -33,6 +33,9 @@ async def load_cogs():
 
 # Main runner
 async def main():
+  if not Config.BOT_TOKEN:
+    raise Exception('No bot token')
+
   async with client:
     await load_cogs()
     await client.start(Config.BOT_TOKEN)
