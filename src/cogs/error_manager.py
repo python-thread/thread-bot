@@ -22,7 +22,7 @@ class ErrorManager(commands.Cog):
     print('Error Manager UP')
 
   @commands.Cog.listener()
-  async def on_command_error(self, ctx, error):
+  async def on_command_error(self, ctx: commands.Context, error):
     prefix = Config.COMMAND_PREFIX
     embed = Embeds()
     embed.color = discord.Color.dark_red()
@@ -37,7 +37,7 @@ class ErrorManager(commands.Cog):
       embed.description= f'Command not found! `{prefix}help` for a list of commands!'
 
     elif isinstance(error, commands.BotMissingPermissions):
-      missing = [perm.replace('_', ' ').replace('guild', 'server').title() for perm in error.missing_perms]
+      missing = [perm.replace('_', ' ').replace('guild', 'server').title() for perm in error.missing_permissions]
       if len(missing) > 2:
         fmt = '{}, and {}'.format("**, **".join(missing[:-1]), missing[-1])
       else:
@@ -51,7 +51,7 @@ class ErrorManager(commands.Cog):
       embed.description = 'This command is on cooldown, please retry in {}s.'.format(math.ceil(error.retry_after))
 
     elif isinstance(error, commands.MissingPermissions):
-      missing = [perm.replace('_', ' ').replace('guild', 'server').title() for perm in error.missing_perms]
+      missing = [perm.replace('_', ' ').replace('guild', 'server').title() for perm in error.missing_permissions]
       if len(missing) > 2:
         fmt = '{}, and {}'.format("**, **".join(missing[:-1]), missing[-1])
       else:
