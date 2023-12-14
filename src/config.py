@@ -1,13 +1,13 @@
 import os
 from dotenv import load_dotenv
-from typing import NoReturn
+from typing import NoReturn, Optional
 
 load_dotenv()
 
 class Config:
   """Configurations"""
 
-  BOT_TOKEN: str = os.getenv('BOT_TOKEN')
+  BOT_TOKEN: Optional[str] = os.getenv('BOT_TOKEN')
 
   GUILD_ID: int = 1184345962412507157
   RULE_CHANNEL_ID: int = 1184494394682916954
