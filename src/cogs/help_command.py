@@ -10,9 +10,18 @@ class Help(commands.Cog):
   Sends this help message
   """
 
-  def __init__(self, client):
+  client: commands.Bot
+
+
+  def __init__(self, client: commands.Bot):
     self.client = client
     client.remove_command('help')
+
+
+  @commands.Cog.listener()
+  async def on_ready(self):
+    print('Help command UP')
+
 
   @commands.hybrid_command(
     name = 'help',
@@ -92,5 +101,5 @@ class Help(commands.Cog):
     await ctx.reply(embed = embed)
 
 
-async def setup(client):
+async def setup(client: commands.Bot):
   await client.add_cog(Help(client))

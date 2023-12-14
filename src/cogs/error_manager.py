@@ -9,12 +9,17 @@ from src.config import Config
 
 class ErrorManager(commands.Cog):
   """hidden"""
-  def __init__(self, client):
+
+  client: commands.Bot
+
+
+  def __init__(self, client: commands.Bot):
     self.client = client
+
 
   @commands.Cog.listener()
   async def on_ready(self):
-    print('Error manager online')
+    print('Error Manager UP')
 
   @commands.Cog.listener()
   async def on_command_error(self, ctx, error):
@@ -79,5 +84,5 @@ class ErrorManager(commands.Cog):
 
 
 
-async def setup(client):
+async def setup(client: commands.Bot):
   await client.add_cog(ErrorManager(client))
