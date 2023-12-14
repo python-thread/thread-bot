@@ -10,6 +10,7 @@ readme = "README.md"
 python = "^3.11"
 "discord.py" = "^2.3.2"
 python-dotenv = "^1.0.0"
+emoji = "^2.9.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.4.3"
