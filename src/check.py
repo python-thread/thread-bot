@@ -1,11 +1,10 @@
 import discord
 from discord import app_commands
 from discord.ext import commands
-from discord import abc
-from config import Config
 
+from .config import Config
 from typing import (
-  NoReturn, Literal, Union, Optional,
+  Any, NoReturn, Literal, Union, Optional,
   List, Sequence, TypedDict
 )
 
@@ -21,7 +20,7 @@ class PermissionRequirement(TypedDict):
   :param value: The permission value
   """
   type: Literal['wl', 'bl']
-  query: Literal['in_channel', 'has_role', 'has_permission', 'is_developer', 'minimum_role']
+  query: Literal['in_channel', 'in_guild', 'has_role', 'has_permission', 'is_developer', 'minimum_role']
   value: Optional[Union[str, int]]
 
 class PermissionGate(TypedDict):
@@ -44,7 +43,7 @@ class HybridContext:
   author: Union[discord.User, discord.Member]
   is_developer: bool
   guild: Optional[discord.Guild]
-  channel: Optional[Union[abc.GuildChannel, abc.PrivateChannel, discord.Thread]]
+  channel: Any
 
   def __init__(self, __ctx: Union[discord.Interaction, commands.Context]) -> None:
     """
@@ -54,62 +53,72 @@ class HybridContext:
     ----------
     :param __ctx: The command context
     """
-    self.author = (isinstance(__ctx, discord.Interaction) and __ctx.user) or __ctx.author
+    self.author = __ctx.user if isinstance(__ctx, discord.Interaction) else __ctx.author
     self.is_developer = (self.author.id == Config.DEVELOPER_USER_ID)
     self.guild = __ctx.guild
     self.channel = __ctx.channel
 
 
 
-def _validate_group(ctx: HybridContext, group: Sequence[PermissionGate]) -> bool:
+def _validate_group(ctx: HybridContext, group: List[PermissionGate]) -> bool:
   required: List[bool] = []
   optional: List[bool] = []
 
   for gate in group:
-    passFlag = False
+    passFlag: bool = False
 
     match gate['requirement']['query']:
       case 'is_developer':
-        passFlag = (gate['requirement']['type'] == 'wl') and ctx.is_developer
-        break
+        passFlag = ((gate['requirement']['type'] == 'wl') and ctx.is_developer)
 
       case 'has_role':
-        if ctx.guild:
+        if ctx.guild and isinstance(ctx.author, discord.Member):
           passFlag = (gate['requirement']['type'] == 'wl') and any(
             gate['requirement']['value'] in [role.id, role.name]
             for role in ctx.author.roles
           )
 
       case 'has_permission':
-        if ctx.guild:
+        if ctx.guild and isinstance(ctx.author, discord.Member):
           passFlag = (gate['requirement']['type'] == 'wl') and getattr(
             ctx.author.guild_permissions,
-            gate['requirement']['value']
+            str(gate['requirement']['value'])
           )
 
       case 'in_channel':
-        if ctx.guild:
+        if ctx.guild and isinstance(ctx.author, discord.Member):
           passFlag = (gate['requirement']['type'] == 'wl') and (
             gate['requirement']['value'] == ctx.channel.id
           )
 
-      case 'minimum_role':
-        if ctx.guild:
-          role = ctx.guild.get_role(gate['requirement']['value'])
-          passFlag = (gate['requirement']['type'] == 'wl') and role and (
-            ctx.author.top_role >= role
+      case 'in_guild':
+        if ctx.guild and isinstance(ctx.author, discord.Member):
+          passFlag = (gate['requirement']['type'] == 'wl') and (
+            gate['requirement']['value'] in
+            [ctx.guild.id, ctx.guild.name]
           )
+
+      case 'minimum_role':
+        if ctx.guild and gate['requirement']['value'] and isinstance(ctx.author, discord.Member):
+          role = ctx.guild.get_role(int(gate['requirement']['value']))
+          passFlag = bool((gate['requirement']['type'] == 'wl') and role and (
+            ctx.author.top_role >= role
+          ))
 
     if gate['type'] == 'required':
       required.append(passFlag)
     else:
       optional.append(passFlag)
 
-  return bool(all(required) and any(optional))
+  return (
+    (((len(required) > 0) and all(required)) or True)
+    and
+    (((len(optional) > 0) and any(optional)) or True)
+  )
 
 
 
-def validate(__ctx: Union[discord.Interaction, commands.Context], *gates: Sequence[Union[PermissionGate, Sequence[PermissionGate]]]) -> bool:
+def validate(__ctx: Union[discord.Interaction, commands.Context], *gates: Union[PermissionGate, Sequence[PermissionGate]]) -> bool:
   """
   Validates a members access to a command
 
@@ -118,88 +127,98 @@ def validate(__ctx: Union[discord.Interaction, commands.Context], *gates: Sequen
   :param __ctx: Command Context [legacy and app command supported]
   :param gates: List of permission gates
   """
-  ctx = HybridContext(__ctx)
+  try:
+    ctx = HybridContext(__ctx)
+    grouped: List[List[PermissionGate]] = [[]]
 
-  ungrouped: List[PermissionGate] = []
-  grouped: List[List[PermissionGate]] = []
+    # Separate grouped and ungrouped
+    for gate in gates:
+      if isinstance(gate, Sequence):
+        grouped.append(list(gate))
+      else:
+        grouped[0].append(gate)
 
-  # Separate grouped and ungrouped
-  for gate in gates:
-    if isinstance(gate, PermissionGate):
-      ungrouped.append(gate)
-    else:
-      grouped.append(gate)
-
-  # Validate
-  joined: List[List[PermissionGate]] = [ungrouped, *grouped]
-  for gate in joined:
-    passFlag = _validate_group(ctx, gate)
-    if not passFlag:
-      return False
-    
-  return True
-
+    # Validate
+    for gate in grouped:
+      if len(gate) > 0:
+        passFlag = _validate_group(ctx, gate)
+        if not passFlag:
+          return False
+      
+    return True
+  except Exception as e:
+    raise commands.CheckFailure(f'{e}') from e
 
 
-class Protected():
+class Protected:
+  @staticmethod
   def app(*clauses: Union[PermissionGate, Sequence[PermissionGate]]):
     """
     Protect app command usage
 
     Unclaused permission gates are treated as one clause
-    All clauses muts pass for the user to be allowed access to the command
+    All clauses must pass for the user to be allowed access to the command
 
     Parameters
     ----------
     :param *: Permission gates or clausees of permission gates
     """
-    async def _run(interaction):
+    async def predicate(interaction):
       return validate(interaction, *clauses)
-    return app_commands.check(_run)
-
+    return app_commands.check(predicate)
+  
+  @staticmethod
   def legacy(*clauses: Union[PermissionGate, Sequence[PermissionGate]]):
     """
     Protect legacy command usage
 
     Unclaused permission gates are treated as one clause
-    All clauses muts pass for the user to be allowed access to the command
+    All clauses must pass for the user to be allowed access to the command
 
     Parameters
     ----------
     :param *: Permission gates or clausees of permission gates
     """
-    def _run(ctx):
+    def predicate(ctx):
      return validate(ctx, *clauses)
-    return commands.check(_run)
+    return commands.check(predicate)
 
 
 
 class PermissionPreset:
   """Permission Presets for repeatedly used permissions"""
 
-  Developer: PermissionRequirement = {
-    'origin': 'guild',
-    'type': 'wl',
-    'query': 'is_developer',
-    'value': None
+  Developer: PermissionGate = {
+    'type': 'required',
+    'requirement': {
+      'type': 'wl',
+      'query': 'is_developer',
+      'value': None
+    }
   }
-  Admin: PermissionRequirement = {
-    'origin': 'guild',
-    'type': 'wl',
-    'query': 'has_permission',
-    'value': 'administrator'
+  Admin: PermissionGate = {
+    'type': 'required',
+    'requirement': PermissionRequirement(
+      type = 'wl',
+      query = 'has_permission',
+      value = 'administrator'
+    )
   }
-  WithinServer: PermissionRequirement = {
-    'origin': 'guild',
-    'type': 'wl',
-    'query': 'in_guild',
-    'value': Config.GUILD_ID
+  WithinServer: PermissionGate = {
+    'type': 'required',
+    'requirement': PermissionRequirement(
+      type = 'wl',
+      query = 'in_guild',
+      value = Config.GUILD_ID
+    )
   }
-  Is_Member: PermissionRequirement = {
-    'origin': 'data',
-    'type': 'wl',
-    'query': 'minimum_role',
-    'value': 'Community'
+  Is_Member: PermissionGate = {
+    'type': 'required',
+    'requirement': PermissionRequirement(
+      type = 'wl',
+      query = 'minimum_role',
+      value = 'Community'
+    )
   }
 
   def __init__(self, *args, **kwargs) -> NoReturn:
