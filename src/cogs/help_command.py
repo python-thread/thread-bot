@@ -33,7 +33,7 @@ class Help(commands.Cog):
     query = 'Module\'s or Command\'s name'
   )
   @commands.cooldown(1, 15)
-  async def help(self, ctx, query: str = None):
+  async def help(self, ctx: commands.Context, query: str = None):
     """Shows all modules of that bot"""
 
     embed = Embeds(
